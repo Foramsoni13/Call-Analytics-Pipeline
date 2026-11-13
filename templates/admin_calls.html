@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Admin · Calls — CallSense{% endblock %}
+{% block content %}
+<div class="app-shell">
+  {% include "_admin_nav.html" %}
+
+  <main class="dashboard">
+    <section class="upload-card">
+      <h2 class="section-title">Filter calls</h2>
+      <form method="GET" action="{{ url_for('admin_calls') }}" class="admin-filter-form">
+        <select name="status" class="admin-filter-form__select">
+          <option value="">All statuses</option>
+          {% for s in ['uploaded', 'preprocessing_audio', 'transcribing', 'analyzing', 'completed', 'failed'] %}
+          <option value="{{ s }}" {% if selected_status == s %}selected{% endif %}>{{ s.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+        <select name="category" class="admin-filter-form__select">
+          <option value="">All categories</option>
+          {% for c in categories %}
+          <option value="{{ c }}" {% if selected_category == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn--primary btn--small">Apply filter</button>
+        {% if selected_status or selected_category %}
+        <a href="{{ url_for('admin_calls') }}" class="btn btn--ghost btn--small">Clear</a>
+        {% endif %}
+      </form>
+    </section>
+
+    <section class="calls-section">
+      <h2 class="section-title">All calls ({{ calls|length }}{% if calls|length == 200 %}, showing most recent 200{% endif %})</h2>
+
+      {% if calls|length == 0 %}
+        <div class="empty-state"><p>No calls match this filter.</p></div>
+      {% else %}
+        <div class="calls-list">
+          {% for call in calls %}
+          <article class="call-card call-card--{{ call.status }}">
+            <div class="call-card__head">
+              <span class="call-card__filename">{{ call.filename }}</span>
+              <div class="call-card__head-right">
+                <span class="tag tag--muted">{{ call.uploaded_by_username or 'unknown user' }}</span>
+                <span class="status-badge status-badge--{{ call.status }}">{{ call.status.replace('_', ' ') }}</span>
+              </div>
+            </div>
+
+            <div class="call-card__actions-bar">
+              {% if call.status == 'completed' %}
+              <a href="{{ url_for('export_call_pdf', call_id=call._id) }}" class="btn btn--ghost btn--small" title="Export Call Report (PDF)" style="display:inline-flex; align-items:center; gap:4px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                PDF
+              </a>
+              {% endif %}
+              <form method="POST" action="{{ url_for('admin_delete_call', call_id=call._id) }}"
+                    class="call-card__action-form call-card__delete"
+                    onsubmit="return confirm('Delete this call record?');">
+                <button type="submit" class="btn btn--ghost btn--small btn--ghost-danger" title="Delete recording">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px; vertical-align: -1px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  Delete
+                </button>
+              </form>
+            </div>
+
+
+
+            {% if call.status == 'completed' %}
+              <div class="call-card__metrics">
+                <div class="metric">
+                  <span class="metric__label">Language</span>
+                  <span class="metric__value">{{ call.language or '—' }}</span>
+                </div>
+                <div class="metric">
+                  <span class="metric__label">Confidence</span>
+                  <span class="metric__value">{{ call.confidence_percent if call.confidence_percent is not none else '—' }}{% if call.confidence_percent is not none %}%{% endif %}</span>
+                </div>
+                <div class="metric">
+                  <span class="metric__label">Total processing time</span>
+                  <span class="metric__value">{{ call.total_time_seconds if call.total_time_seconds is not none else '—' }}{% if call.total_time_seconds is not none %}s{% endif %}</span>
+                </div>
+                <div class="metric">
+                  <span class="metric__label">Uploaded</span>
+                  <span class="metric__value">{{ call.created_at.strftime('%d %b, %H:%M') if call.created_at else '—' }}</span>
+                </div>
+              </div>
+              <div class="call-card__meta">
+                <span class="tag">{{ call.category }}</span>
+                <span class="tag tag--sentiment-{{ call.sentiment|lower }}">{{ call.sentiment }}</span>
+                {% if call.priority %}<span class="tag tag--priority-{{ call.priority|lower }}">{{ call.priority }} priority</span>{% endif %}
+              </div>
+              <details class="call-card__transcript">
+                <summary>View full transcript ({{ call.language or 'Audio' }})</summary>
+                <div class="transcript-tabs">
+                  <button type="button" class="transcript-tab-btn active" data-target="admin-orig-{{ call._id }}">
+                    Original ({{ call.language or 'Audio' }})
+                  </button>
+                  {% if call.language == 'Hindi' %}
+                    {% if call.transcript_hindi %}
+                    <button type="button" class="transcript-tab-btn" data-target="admin-hi-{{ call._id }}">Hindi</button>
+                    {% endif %}
+                    {% if call.transcript_gujarati %}
+                    <button type="button" class="transcript-tab-btn" data-target="admin-gu-{{ call._id }}">Gujarati</button>
+                    {% endif %}
+                  {% else %}
+                    {% if call.transcript_gujarati %}
+                    <button type="button" class="transcript-tab-btn" data-target="admin-gu-{{ call._id }}">Gujarati</button>
+                    {% endif %}
+                    {% if call.transcript_hindi %}
+                    <button type="button" class="transcript-tab-btn" data-target="admin-hi-{{ call._id }}">Hindi</button>
+                    {% endif %}
+                  {% endif %}
+                  {% if call.transcript_english and call.language != 'English' %}
+                  <button type="button" class="transcript-tab-btn" data-target="admin-en-{{ call._id }}">English</button>
+                  {% endif %}
+                </div>
+
+                <div class="transcript-panel active" id="admin-orig-{{ call._id }}">
+                  <p>{{ call.transcript }}</p>
+                </div>
+                {% if call.transcript_hindi %}
+                <div class="transcript-panel" id="admin-hi-{{ call._id }}">
+                  <p>{{ call.transcript_hindi }}</p>
+                </div>
+                {% endif %}
+                {% if call.transcript_gujarati %}
+                <div class="transcript-panel" id="admin-gu-{{ call._id }}">
+                  <p>{{ call.transcript_gujarati }}</p>
+                </div>
+                {% endif %}
+                {% if call.transcript_english and call.language != 'English' %}
+                <div class="transcript-panel" id="admin-en-{{ call._id }}">
+                  <p>{{ call.transcript_english }}</p>
+                </div>
+                {% endif %}
+              </details>
+            {% elif call.status == 'failed' %}
+              <p class="call-card__error">Processing failed{% if call.failed_stage %} at "{{ call.failed_stage.replace('_', ' ') }}"{% endif %}: {{ call.error }}</p>
+            {% else %}
+              <p class="call-card__processing">Currently: {{ call.status.replace('_', ' ') }}…</p>
+            {% endif %}
+          </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+  </main>
+</div>
+
+<script>
+document.querySelectorAll('.transcript-tab-btn').forEach(function (tab) {
+  tab.addEventListener('click', function (e) {
+    e.preventDefault();
+    var parent = tab.closest('.call-card__transcript');
+    if (!parent) return;
+    parent.querySelectorAll('.transcript-tab-btn').forEach(function (t) { t.classList.remove('active'); });
+    parent.querySelectorAll('.transcript-panel').forEach(function (p) { p.classList.remove('active'); });
+    tab.classList.add('active');
+    var target = document.getElementById(tab.dataset.target);
+    if (target) target.classList.add('active');
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Verify Code — CallSense{% endblock %}
+{% block content %}
+<div class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-card__brand">
+      <div class="mini-waveform"><span></span><span></span><span></span><span></span><span></span></div>
+      <span class="auth-card__brand-text">Call<span class="accent">Sense</span></span>
+    </div>
+
+    <h1 class="auth-card__title">Enter verification code</h1>
+    <p class="auth-card__subtitle">
+      We sent a 6-digit verification code to<br>
+      <strong class="user-highlight" id="maskedEmail">{{ masked_email or email }}</strong>
+    </p>
+
+    <!-- Expiration Countdown Badge -->
+    <div class="timer-badge" id="expiryBadge">
+      <svg class="timer-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      <span>Code expires in: <strong id="timerDisplay">05:00</strong></span>
+    </div>
+
+    <form method="POST" action="{{ url_for('verify_otp') }}" class="auth-form" id="otpForm" novalidate>
+      <input type="hidden" name="email" value="{{ email }}">
+
+      <div class="field">
+        <label for="otpInput" class="field__label" style="text-align: center; display: block;">6-Digit Verification Code</label>
+        
+        <!-- Segmented 6-digit inputs for best desktop & mobile UX -->
+        <div class="otp-boxes" id="otpBoxes">
+          <input type="text" class="otp-box" maxlength="1" inputmode="numeric" pattern="[0-9]*" autofocus data-index="0" aria-label="Digit 1">
+          <input type="text" class="otp-box" maxlength="1" inputmode="numeric" pattern="[0-9]*" data-index="1" aria-label="Digit 2">
+          <input type="text" class="otp-box" maxlength="1" inputmode="numeric" pattern="[0-9]*" data-index="2" aria-label="Digit 3">
+          <input type="text" class="otp-box" maxlength="1" inputmode="numeric" pattern="[0-9]*" data-index="3" aria-label="Digit 4">
+          <input type="text" class="otp-box" maxlength="1" inputmode="numeric" pattern="[0-9]*" data-index="4" aria-label="Digit 5">
+          <input type="text" class="otp-box" maxlength="1" inputmode="numeric" pattern="[0-9]*" data-index="5" aria-label="Digit 6">
+        </div>
+
+        <!-- Hidden full OTP input submitted with form -->
+        <input type="hidden" id="fullOtp" name="otp" value="">
+        <span class="field__error" id="otpError" style="text-align: center;"></span>
+      </div>
+
+      <button type="submit" class="btn btn--primary btn--block" id="verifySubmitBtn">
+        <span class="btn__text">Verify Code</span>
+        <span class="btn__spinner" style="display: none;"></span>
+      </button>
+    </form>
+
+    <!-- Resend Section with Cooldown Timer -->
+    <div class="resend-section">
+      <span class="resend-label">Didn't receive the code?</span>
+      <form method="POST" action="{{ url_for('resend_otp') }}" id="resendForm" style="display: inline;">
+        <input type="hidden" name="email" value="{{ email }}">
+        <button type="submit" class="btn-link" id="resendBtn" disabled>
+          Resend Code <span id="cooldownText">(in 60s)</span>
+        </button>
+      </form>
+    </div>
+
+    <p class="auth-card__footer">
+      Entered the wrong email? <a href="{{ url_for('forgot_password') }}">Change email</a>
+    </p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var form = document.getElementById('otpForm');
+  var boxes = document.querySelectorAll('.otp-box');
+  var fullOtpInput = document.getElementById('fullOtp');
+  var otpError = document.getElementById('otpError');
+  var verifyBtn = document.getElementById('verifySubmitBtn');
+  var btnText = verifyBtn.querySelector('.btn__text');
+  var btnSpinner = verifyBtn.querySelector('.btn__spinner');
+
+  var resendBtn = document.getElementById('resendBtn');
+  var cooldownText = document.getElementById('cooldownText');
+  var timerDisplay = document.getElementById('timerDisplay');
+  var expiryBadge = document.getElementById('expiryBadge');
+
+  // Expiration countdown (5 minutes = 300 seconds)
+  var totalSeconds = {{ expires_in|default(300) }};
+  var expiryInterval = setInterval(function() {
+    if (totalSeconds <= 0) {
+      clearInterval(expiryInterval);
+      timerDisplay.textContent = 'Expired';
+      expiryBadge.classList.add('timer-badge--expired');
+      verifyBtn.disabled = true;
+      otpError.textContent = 'This verification code has expired. Please click Resend Code.';
+      otpError.classList.add('is-visible');
+      return;
+    }
+    totalSeconds--;
+    var m = Math.floor(totalSeconds / 60);
+    var s = totalSeconds % 60;
+    timerDisplay.textContent = (m < 10 ? '0' + m : m) + ':' + (s < 10 ? '0' + s : s);
+  }, 1000);
+
+  // Resend cooldown countdown
+  var cooldownSec = {{ cooldown|default(60) }};
+  function updateCooldown() {
+    if (cooldownSec > 0) {
+      resendBtn.disabled = true;
+      cooldownText.textContent = '(in ' + cooldownSec + 's)';
+      cooldownText.style.display = 'inline';
+      cooldownSec--;
+      setTimeout(updateCooldown, 1000);
+    } else {
+      resendBtn.disabled = false;
+      cooldownText.textContent = '';
+      cooldownText.style.display = 'none';
+    }
+  }
+  updateCooldown();
+
+  // Multi-box digit input UX with auto-advance and backspace support
+  boxes.forEach(function(box, idx) {
+    box.addEventListener('input', function(e) {
+      var val = e.target.value.replace(/[^0-9]/g, '');
+      box.value = val ? val[val.length - 1] : '';
+      if (box.value && idx < boxes.length - 1) {
+        boxes[idx + 1].focus();
+      }
+      collectOtp();
+    });
+
+    box.addEventListener('keydown', function(e) {
+      if (e.key === 'Backspace' && !box.value && idx > 0) {
+        boxes[idx - 1].focus();
+      }
+    });
+
+    box.addEventListener('paste', function(e) {
+      e.preventDefault();
+      var pasted = (e.clipboardData || window.clipboardData).getData('text');
+      var digits = pasted.replace(/[^0-9]/g, '').slice(0, 6);
+      if (digits.length > 0) {
+        for (var i = 0; i < boxes.length; i++) {
+          boxes[i].value = digits[i] || '';
+        }
+        var targetIndex = Math.min(digits.length, boxes.length - 1);
+        boxes[targetIndex].focus();
+        collectOtp();
+      }
+    });
+  });
+
+  function collectOtp() {
+    var str = '';
+    boxes.forEach(function(b) { str += b.value; });
+    fullOtpInput.value = str;
+    if (str.length === 6) {
+      otpError.textContent = '';
+      otpError.classList.remove('is-visible');
+    }
+    return str;
+  }
+
+  form.addEventListener('submit', function(e) {
+    var otp = collectOtp();
+    if (otp.length !== 6) {
+      e.preventDefault();
+      otpError.textContent = 'Please enter all 6 digits of the verification code.';
+      otpError.classList.add('is-visible');
+      // Focus first empty box
+      for (var i = 0; i < boxes.length; i++) {
+        if (!boxes[i].value) {
+          boxes[i].focus();
+          break;
+        }
+      }
+      return;
+    }
+
+    verifyBtn.disabled = true;
+    if (btnText) btnText.textContent = 'Verifying...';
+    if (btnSpinner) btnSpinner.style.display = 'inline-block';
+  });
+})();
+</script>
+{% endblock %}

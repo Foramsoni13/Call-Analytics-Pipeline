@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+venv/
+ven/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+call_analytics_pipeline*.zip
+uploads/*
+!uploads/.gitkeep
+api.txt

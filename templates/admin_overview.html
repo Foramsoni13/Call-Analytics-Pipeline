@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Admin · Overview — CallSense{% endblock %}
+{% block content %}
+<div class="app-shell">
+  {% include "_admin_nav.html" %}
+
+  <main class="dashboard">
+
+    <section class="stats-row">
+      <div class="stat-card">
+        <span class="stat-card__label">Total users</span>
+        <span class="stat-card__value">{{ stats.total_users }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Total calls</span>
+        <span class="stat-card__value">{{ stats.completed_calls }}<span class="stat-card__value-muted">/{{ stats.total_calls }}</span></span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Failed calls</span>
+        <span class="stat-card__value{% if stats.failed_calls %} stat-card__value--warning{% endif %}">{{ stats.failed_calls }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">In progress</span>
+        <span class="stat-card__value">{{ stats.in_progress_calls }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Overall accuracy<span class="info-dot" tabindex="0">i<span class="info-dot__tooltip">Average of the model's own confidence across every completed call, from every user — not verified against a human transcript.</span></span></span>
+        <span class="stat-card__value">{{ stats.avg_confidence if stats.avg_confidence is not none else '—' }}{% if stats.avg_confidence is not none %}%{% endif %}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Avg. time / call</span>
+        <span class="stat-card__value">{{ stats.avg_time if stats.avg_time is not none else '—' }}{% if stats.avg_time is not none %}s{% endif %}</span>
+      </div>
+    </section>
+
+    {% if stats.top_confidence_reasons %}
+    <section class="category-breakdown">
+      <h2 class="section-title">Why confidence isn't 100% — across all calls</h2>
+      <p class="section-subtitle">Aggregated from {{ stats.calls_with_breakdown }} completed call(s) with a confidence breakdown. Useful for spotting systemic issues (e.g. most calls losing points to background noise probably means agent mics/lines need attention).</p>
+      <div class="confidence-breakdown__bars confidence-breakdown__bars--admin">
+        {% set max_pct = stats.top_confidence_reasons[0].avg_percent %}
+        {% for reason in stats.top_confidence_reasons %}
+        <div class="confidence-reason-row">
+          <span class="confidence-reason-row__label">{{ reason.label }}</span>
+          <div class="confidence-reason-row__track">
+            <div class="confidence-reason-row__fill confidence-reason-row__fill--{{ reason.category }}" style="width: {{ (reason.avg_percent / max_pct * 100) | round(0) if max_pct else 0 }}%"></div>
+          </div>
+          <span class="confidence-reason-row__pct">{{ reason.avg_percent }}% avg · {{ reason.call_count }} call{{ 's' if reason.call_count != 1 }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <div class="admin-columns">
+      {% if stats.category_counts %}
+      <section class="category-breakdown">
+        <h2 class="section-title">Calls by category</h2>
+        <div class="category-bars">
+          {% set max_count = stats.category_counts.values() | max %}
+          {% for cat, count in stats.category_counts.items() %}
+          <div class="category-bar-row">
+            <span class="category-bar-row__label">{{ cat }}</span>
+            <div class="category-bar-row__track">
+              <div class="category-bar-row__fill" style="width: {{ (count / max_count * 100) | round(0) }}%"></div>
+            </div>
+            <span class="category-bar-row__count">{{ count }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+
+      {% if stats.sentiment_counts %}
+      <section class="category-breakdown">
+        <h2 class="section-title">Calls by sentiment</h2>
+        <div class="category-bars">
+          {% set max_count = stats.sentiment_counts.values() | max %}
+          {% for label, count in stats.sentiment_counts.items() %}
+          <div class="category-bar-row">
+            <span class="category-bar-row__label">{{ label }}</span>
+            <div class="category-bar-row__track">
+              <div class="category-bar-row__fill" style="width: {{ (count / max_count * 100) | round(0) }}%"></div>
+            </div>
+            <span class="category-bar-row__count">{{ count }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+
+      {% if stats.priority_counts %}
+      <section class="category-breakdown">
+        <h2 class="section-title">Calls by priority</h2>
+        <div class="category-bars">
+          {% set max_count = stats.priority_counts.values() | max %}
+          {% for label, count in stats.priority_counts.items() %}
+          <div class="category-bar-row">
+            <span class="category-bar-row__label">{{ label }}</span>
+            <div class="category-bar-row__track">
+              <div class="category-bar-row__fill" style="width: {{ (count / max_count * 100) | round(0) }}%"></div>
+            </div>
+            <span class="category-bar-row__count">{{ count }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+
+      {% if stats.language_counts %}
+      <section class="category-breakdown">
+        <h2 class="section-title">Calls by language</h2>
+        <div class="category-bars">
+          {% set max_count = stats.language_counts.values() | max %}
+          {% for label, count in stats.language_counts.items() %}
+          <div class="category-bar-row">
+            <span class="category-bar-row__label">{{ label }}</span>
+            <div class="category-bar-row__track">
+              <div class="category-bar-row__fill" style="width: {{ (count / max_count * 100) | round(0) }}%"></div>
+            </div>
+            <span class="category-bar-row__count">{{ count }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+    </div>
+
+  </main>
+</div>
+{% endblock %}

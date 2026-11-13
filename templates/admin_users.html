@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Admin · Users — CallSense{% endblock %}
+{% block content %}
+<div class="app-shell">
+  {% include "_admin_nav.html" %}
+
+  <main class="dashboard">
+    <section class="calls-section">
+      <h2 class="section-title">Users ({{ users|length }})</h2>
+
+      {% if users|length == 0 %}
+        <div class="empty-state"><p>No users yet.</p></div>
+      {% else %}
+        <div class="admin-table">
+          <div class="admin-table__head admin-table__row--users">
+            <span>Username</span>
+            <span>Email</span>
+            <span>Joined</span>
+            <span>Calls</span>
+            <span>Role</span>
+            <span>Actions</span>
+          </div>
+          {% for user in users %}
+          <div class="admin-table__row admin-table__row--users">
+            <span class="admin-table__strong">{{ user.username }}</span>
+            <span>{{ user.email }}</span>
+            <span>{{ user.created_at.strftime('%d %b %Y') if user.created_at else '—' }}</span>
+            <span>{{ user.call_count }}</span>
+            <span>
+              {% if user.is_admin %}<span class="tag tag--admin">Admin</span>{% else %}<span class="tag tag--muted">User</span>{% endif %}
+            </span>
+            <span class="admin-table__actions">
+              {% if user._id|string == session.get('user_id') %}
+                <span class="admin-table__self-note">You</span>
+              {% else %}
+                <form method="POST" action="{{ url_for('admin_toggle_user_admin', user_id=user._id) }}">
+                  <input type="hidden" name="make_admin" value="{{ '0' if user.is_admin else '1' }}">
+                  <button type="submit" class="btn btn--ghost btn--small">{{ 'Remove admin' if user.is_admin else 'Make admin' }}</button>
+                </form>
+                <form method="POST" action="{{ url_for('admin_delete_user', user_id=user._id) }}"
+                      onsubmit="return confirm('Delete {{ user.username }} and all {{ user.call_count }} of their call(s)? This cannot be undone.');">
+                  <button type="submit" class="btn btn--danger btn--small">Delete</button>
+                </form>
+              {% endif %}
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+  </main>
+</div>
+{% endblock %}

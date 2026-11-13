@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Profile — CallSense{% endblock %}
+{% block content %}
+<div class="app-shell">
+
+  <header class="topbar">
+    <div class="topbar__brand">
+      <div class="mini-waveform"><span></span><span></span><span></span><span></span><span></span></div>
+      <span class="auth-card__brand-text">Call<span class="accent">Sense</span></span>
+    </div>
+    <div class="topbar__user">
+      <a href="{{ url_for('dashboard') }}" class="btn btn--ghost btn--small">Dashboard</a>
+      <a href="{{ url_for('dashboard', view='shared') }}" class="btn btn--ghost btn--small">Shared With Me</a>
+      {% if session.get('is_admin') %}
+      <a href="{{ url_for('admin_overview') }}" class="btn btn--ghost btn--small">Admin</a>
+      {% endif %}
+      <a href="{{ url_for('logout') }}" class="btn btn--ghost btn--small">Logout</a>
+    </div>
+  </header>
+
+  <main class="dashboard">
+
+    <section class="profile-header">
+      <div class="profile-header__left">
+        <div class="profile-avatar">{{ user.username[0] | upper }}</div>
+        <div class="profile-header__info">
+          <h1 class="profile-header__name">{{ user.username }}</h1>
+          <p class="profile-header__email">{{ user.email }}</p>
+          <p class="profile-header__joined">Member since {{ user.created_at.strftime('%d %b %Y') if user.created_at else '—' }}</p>
+        </div>
+      </div>
+      <button type="button" class="btn btn--ghost btn--small" id="editProfileBtn">Edit Profile</button>
+    </section>
+
+    <section class="stats-row">
+      <div class="stat-card">
+        <span class="stat-card__label">Calls processed</span>
+        <span class="stat-card__value">{{ stats.completed }}<span class="stat-card__value-muted">/{{ stats.total }}</span></span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Avg. confidence</span>
+        <span class="stat-card__value">{{ stats.avg_confidence if stats.avg_confidence is not none else '—' }}{% if stats.avg_confidence is not none %}%{% endif %}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Avg. time / call</span>
+        <span class="stat-card__value">{{ stats.avg_time if stats.avg_time is not none else '—' }}{% if stats.avg_time is not none %}s{% endif %}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Languages detected</span>
+        <span class="stat-card__value stat-card__value--small">
+          {% if stats.languages %}{{ stats.languages | join(', ') }}{% else %}—{% endif %}
+        </span>
+      </div>
+    </section>
+
+    {% if category_counts %}
+    <section class="category-breakdown">
+      <h2 class="section-title">Calls by category</h2>
+      <div class="category-bars">
+        {% set max_count = category_counts.values() | max %}
+        {% for cat, count in category_counts.items() %}
+        <div class="category-bar-row">
+          <span class="category-bar-row__label">{{ cat }}</span>
+          <div class="category-bar-row__track">
+            <div class="category-bar-row__fill" style="width: {{ (count / max_count * 100) | round(0) }}%"></div>
+          </div>
+          <span class="category-bar-row__count">{{ count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="calls-section">
+      <h2 class="section-title">Call history</h2>
+
+      {% if calls|length == 0 %}
+        <div class="empty-state">
+          <div class="mini-waveform mini-waveform--muted"><span></span><span></span><span></span><span></span><span></span></div>
+          <p>No calls processed yet.</p>
+        </div>
+      {% else %}
+        <div class="history-table">
+          <div class="history-table__head">
+            <span>File</span>
+            <span>Date</span>
+            <span>Language</span>
+            <span>Category</span>
+            <span>Motive</span>
+            <span>Status</span>
+          </div>
+          {% for call in calls %}
+          <div class="history-table__row">
+            <span class="history-table__filename">{{ call.filename }}</span>
+            <span>{{ call.created_at.strftime('%d %b, %H:%M') if call.created_at else '—' }}</span>
+            <span>{{ call.language or '—' }}</span>
+            <span>{% if call.category %}<span class="tag">{{ call.category }}</span>{% else %}—{% endif %}</span>
+            <span class="history-table__motive">{{ call.motive or '—' }}</span>
+            <span><span class="status-badge status-badge--{{ call.status }}">{{ call.status }}</span></span>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="editProfileModal" hidden>
+    <div class="modal">
+      <div class="modal__head">
+        <h2>Edit profile</h2>
+        <button type="button" class="modal__close" id="closeEditProfile" aria-label="Close">&times;</button>
+      </div>
+
+      <form method="POST" action="{{ url_for('update_profile') }}" class="auth-form modal__form">
+        <div class="field">
+          <label class="field__label" for="edit_username">Username</label>
+          <input type="text" id="edit_username" name="username" value="{{ user.username }}" required>
+        </div>
+        <div class="field">
+          <label class="field__label" for="edit_email">Email</label>
+          <input type="email" id="edit_email" name="email" value="{{ user.email }}" required>
+        </div>
+        <button type="submit" class="btn btn--primary btn--block">Save changes</button>
+      </form>
+
+      <div class="modal__divider"></div>
+
+      <h3 class="modal__subtitle">Change password</h3>
+      <form method="POST" action="{{ url_for('update_password') }}" class="auth-form modal__form">
+        <div class="field">
+          <label class="field__label" for="current_password">Current password</label>
+          <input type="password" id="current_password" name="current_password" required>
+        </div>
+        <div class="field">
+          <label class="field__label" for="new_password">New password</label>
+          <input type="password" id="new_password" name="new_password" required minlength="6">
+        </div>
+        <div class="field">
+          <label class="field__label" for="confirm_new_password">Confirm new password</label>
+          <input type="password" id="confirm_new_password" name="confirm_new_password" required minlength="6">
+        </div>
+        <button type="submit" class="btn btn--ghost btn--block">Update password</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var editBtn = document.getElementById('editProfileBtn');
+  var modal = document.getElementById('editProfileModal');
+  var closeBtn = document.getElementById('closeEditProfile');
+
+  if (editBtn && modal && closeBtn) {
+    editBtn.addEventListener('click', function () { modal.removeAttribute('hidden'); });
+    closeBtn.addEventListener('click', function () { modal.setAttribute('hidden', ''); });
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.setAttribute('hidden', '');
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') modal.setAttribute('hidden', '');
+    });
+  }
+</script>
+{% endblock %}

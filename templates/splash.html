@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Call Analytics{% endblock %}
+{% block content %}
+<div class="splash">
+  <div class="splash__waveform" aria-hidden="true">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span>
+  </div>
+  <h1 class="splash__title">Call<span class="accent">Sense</span></h1>
+  <p class="splash__tagline">Listening in Hindi, Gujarati &amp; English — turning calls into clarity.</p>
+  <div class="splash__loader"><div class="splash__loader-bar"></div></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  setTimeout(function () {
+    window.location.href = "{{ url_for('login') }}";
+  }, 2400);
+</script>
+{% endblock %}

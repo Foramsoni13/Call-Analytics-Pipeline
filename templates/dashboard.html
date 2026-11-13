@@ -1,0 +1,1099 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — CallSense{% endblock %}
+{% block content %}
+<div class="app-shell">
+
+  <header class="topbar">
+    <div class="topbar__brand">
+      <div class="mini-waveform"><span></span><span></span><span></span><span></span><span></span></div>
+      <span class="auth-card__brand-text">Call<span class="accent">Sense</span></span>
+    </div>
+    <div class="topbar__user">
+      <span>Hi, <strong>{{ session.get('username') }}</strong></span>
+      <a href="{{ url_for('dashboard', view='shared') }}" class="btn btn--ghost btn--small topbar-shared-link" title="Calls shared with you">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px; vertical-align: -2px;"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+        Shared With Me{% if shared_calls and shared_calls|length > 0 %} <span class="tab-badge tab-badge--highlight">{{ shared_calls|length }}</span>{% endif %}
+      </a>
+      {% if session.get('is_admin') %}
+      <a href="{{ url_for('admin_overview') }}" class="btn btn--ghost btn--small">Admin</a>
+      {% endif %}
+      <a href="{{ url_for('profile') }}" class="btn btn--ghost btn--small">Profile</a>
+      <a href="{{ url_for('logout') }}" class="btn btn--ghost btn--small">Logout</a>
+    </div>
+  </header>
+
+  <main class="dashboard">
+
+    <section class="stats-row">
+      <div class="stat-card">
+        <span class="stat-card__label">Calls processed</span>
+        <span class="stat-card__value">{{ stats.completed }}<span class="stat-card__value-muted">/{{ stats.total }}</span></span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Overall accuracy<span class="info-dot" tabindex="0">i<span class="info-dot__tooltip">Average of the model's own confidence across your completed calls — not verified against a human transcript, since none exists to compare against.</span></span></span>
+        <span class="stat-card__value">{{ stats.avg_confidence if stats.avg_confidence is not none else '—' }}{% if stats.avg_confidence is not none %}%{% endif %}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Avg. time / call</span>
+        <span class="stat-card__value">{{ stats.avg_time if stats.avg_time is not none else '—' }}{% if stats.avg_time is not none %}s{% endif %}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Languages detected</span>
+        <span class="stat-card__value stat-card__value--small">
+          {% if stats.languages %}{{ stats.languages | join(', ') }}{% else %}—{% endif %}
+        </span>
+      </div>
+    </section>
+
+    <section class="upload-card">
+      <h2 class="section-title">Upload a call recording</h2>
+      <p class="section-subtitle">MP3 / WAV / M4A — Hindi, Gujarati &amp; English (code-mixed) supported.</p>
+      <form method="POST" action="{{ url_for('upload_call') }}" enctype="multipart/form-data" class="upload-form" id="uploadForm">
+        <div class="upload-form__fields">
+          <input type="file" name="audio_file" accept=".mp3,.wav,.m4a,.ogg,.webm" required>
+          <select name="language" id="languageSelect" class="form-select" title="Spoken Language">
+            <option value="auto" selected>Auto Detect (Hindi / Gujarati / English)</option>
+            <option value="hi">Hindi (हिंदी)</option>
+            <option value="gu">Gujarati (ગુજરાતી)</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn--primary" id="uploadBtn">Process call</button>
+      </form>
+      <p class="upload-hint">Sample calls to try: check the <code>sample_calls/</code> folder in this project.</p>
+    </section>
+
+    <section class="record-card">
+      <h2 class="section-title">Record a live call</h2>
+      <p class="section-subtitle">Put your call on speaker near this device's microphone, then hit record. When it's done, review and confirm to process it.</p>
+
+      <div class="record-controls">
+        <button type="button" class="btn btn--primary" id="startRecordBtn">
+          <span class="record-dot"></span> Start Recording
+        </button>
+        <button type="button" class="btn btn--danger" id="stopRecordBtn" hidden>
+          <span class="record-dot record-dot--active"></span> Stop Recording
+        </button>
+        <span class="record-timer" id="recordTimer">00:00</span>
+        <span class="record-status" id="recordStatus"></span>
+      </div>
+
+      <div class="record-preview" id="recordPreview" hidden>
+        <p class="record-preview__label">Recording ready — listen back before processing:</p>
+        <audio controls id="previewAudio" class="record-preview__audio"></audio>
+        <div class="record-preview__actions">
+          <button type="button" class="btn btn--primary" id="processRecordingBtn">Yes, process this recording</button>
+          <button type="button" class="btn btn--ghost" id="discardRecordingBtn">Discard &amp; re-record</button>
+        </div>
+      </div>
+
+      <form method="POST" action="{{ url_for('upload_call') }}" enctype="multipart/form-data" id="recordForm" hidden>
+        <input type="file" name="audio_file" id="recordFileInput">
+      </form>
+    </section>
+
+    {% macro render_call_card(call, is_shared=False) %}
+    <article class="call-card call-card--{{ call.status }}">
+      {% if is_shared and call.shared_info %}
+      <div class="call-card__shared-banner">
+        <div class="shared-banner-main">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+          <span>Shared by <strong>{{ call.shared_info.shared_by_username }}</strong>{% if call.shared_info.shared_at %} on {{ call.shared_info.shared_at.strftime('%b %d, %Y at %I:%M %p') }}{% endif %}</span>
+        </div>
+        <div class="shared-banner-customer" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          {% if call.shared_info.customer_name and call.shared_info.customer_name != call.shared_info.username %}
+          <span class="shared-customer-badge" title="Customer Name" style="display:inline-flex; align-items:center; gap:4px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent2); flex-shrink: 0;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            <span class="shared-customer-label">Customer:</span>
+            <strong>{{ call.shared_info.customer_name }}</strong>
+          </span>
+          {% endif %}
+          {% if call.shared_info.customer_number and not call.shared_info.customer_number.startswith('CUST-') %}
+          <span class="shared-customer-badge shared-customer-badge--number" title="Customer Phone" style="display:inline-flex; align-items:center; gap:4px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent2); flex-shrink: 0;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+            <span class="shared-customer-label">Phone:</span>
+            <strong>{{ call.shared_info.customer_number }}</strong>
+          </span>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="call-card__head">
+        <div class="call-card__head-left">
+          <span class="call-card__filename">{{ call.filename }}</span>
+          {% if is_shared and call.shared_info %}
+          <div class="call-card__customer-tag-row">
+            <span class="call-customer-tag call-customer-tag--sender" title="Shared by Other User">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent2); flex-shrink: 0;"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
+              <span>Shared by: <strong>{{ call.shared_info.shared_by_username }}</strong></span>
+            </span>
+            {% if call.shared_info.customer_name %}
+            <span class="call-customer-tag" title="Customer Name">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent2); flex-shrink: 0;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              <span>Customer: <strong>{{ call.shared_info.customer_name }}</strong></span>
+            </span>
+            {% endif %}
+            {% if call.shared_info.customer_number and not call.shared_info.customer_number.startswith('CUST-') %}
+            <span class="call-customer-tag call-customer-tag--num" title="Customer Phone">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent2); flex-shrink: 0;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+              <strong>{{ call.shared_info.customer_number }}</strong>
+            </span>
+            {% endif %}
+          </div>
+          {% else %}
+          {% if call.customer_name %}
+          <div class="call-card__customer-tag-row">
+            <span class="call-customer-tag" title="Customer Name">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent2); flex-shrink: 0;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              <span>Customer: <strong>{{ call.customer_name }}</strong></span>
+            </span>
+          </div>
+          {% endif %}
+          {% endif %}
+        </div>
+        <div class="call-card__head-right">
+          <span class="status-badge status-badge--{{ call.status }}">{{ call.status.replace('_', ' ') }}</span>
+        </div>
+      </div>
+
+      <div class="call-card__actions-bar">
+        {% if call.status == 'completed' %}
+        <a href="{{ url_for('export_call_pdf', call_id=call._id) }}" class="btn btn--ghost btn--small" title="Export Call Report (PDF)" style="display:inline-flex; align-items:center; gap:4px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+          PDF
+        </a>
+        {% endif %}
+
+        <button type="button" class="btn btn--ghost btn--small btn--share js-share-btn"
+                data-call-id="{{ call._id }}"
+                data-call-name="{{ call.filename }}"
+                data-customer-name="{{ call.customer_name or (call.shared_info and call.shared_info.customer_name) or '' }}"
+                data-customer-phone="{{ (call.shared_info and (call.shared_info.customer_phone or call.shared_info.customer_number)) or '' }}"
+                data-shared-with='{{ (call.shared_with or []) | tojson }}'
+                title="Share call with a registered user">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: -2px;"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+          Share
+        </button>
+
+        {% if not is_shared %}
+        <form method="POST" action="{{ url_for('reprocess_call', call_id=call._id) }}"
+              class="call-card__action-form call-card__reprocess js-confirm-action"
+              data-confirm-title="Re-process Call"
+              data-confirm-subtitle="Re-run transcription pipeline"
+              data-confirm-message="Are you sure you want to re-process this call recording through speech-to-text and analytics?"
+              data-confirm-icon="🔄"
+              data-confirm-btn="Re-process"
+              data-confirm-danger="false">
+          <button type="submit" class="btn btn--ghost btn--small" title="Re-run transcription and translation">Re-process</button>
+        </form>
+        <form method="POST" action="{{ url_for('delete_call', call_id=call._id) }}"
+              class="call-card__action-form call-card__delete js-confirm-action"
+              data-confirm-title="Delete Call Recording"
+              data-confirm-subtitle="Permanent deletion"
+              data-confirm-message="Are you sure you want to delete this call recording? This action cannot be undone."
+              data-confirm-icon="🗑️"
+              data-confirm-btn="Delete"
+              data-confirm-danger="true">
+          <button type="submit" class="btn btn--ghost btn--small btn--ghost-danger" title="Delete recording">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px; vertical-align: -1px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            Delete
+          </button>
+        </form>
+        {% else %}
+        <form method="POST" action="{{ url_for('unshare_call_route', call_id=call._id) }}"
+              class="call-card__action-form call-card__delete js-confirm-action"
+              data-confirm-title="Remove Shared Call"
+              data-confirm-subtitle="Remove from your account"
+              data-confirm-message="Are you sure you want to remove this shared call from your list? You will no longer see this recording in your Shared With Me section."
+              data-confirm-icon="🗑️"
+              data-confirm-btn="Remove"
+              data-confirm-danger="true">
+          <input type="hidden" name="recipient_id" value="{{ session.user_id }}">
+          <button type="submit" class="btn btn--ghost btn--small btn--ghost-danger" title="Remove from your Shared With Me list">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px; vertical-align: -1px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            Remove
+          </button>
+        </form>
+        {% endif %}
+      </div>
+
+      {% if call.status == 'completed' %}
+        <audio controls class="call-card__audio" src="{{ url_for('serve_audio', filename=call.filename) }}" preload="none"></audio>
+
+        <div class="call-card__metrics">
+          <div class="metric">
+            <span class="metric__label">Language</span>
+            <span class="metric__value">{{ call.language or '—' }}</span>
+          </div>
+          <div class="metric">
+            <span class="metric__label">Confidence</span>
+            <span class="metric__value">{{ call.confidence_percent if call.confidence_percent is not none else '—' }}{% if call.confidence_percent is not none %}%{% endif %}</span>
+          </div>
+          <div class="metric">
+            <span class="metric__label">Speech-to-text time</span>
+            <span class="metric__value">{{ call.transcription_time_seconds if call.transcription_time_seconds is not none else '—' }}{% if call.transcription_time_seconds is not none %}s{% endif %}</span>
+          </div>
+          <div class="metric">
+            <span class="metric__label">Total processing time</span>
+            <span class="metric__value">{{ call.total_time_seconds if call.total_time_seconds is not none else '—' }}{% if call.total_time_seconds is not none %}s{% endif %}</span>
+          </div>
+        </div>
+
+        <div class="call-card__meta">
+          <span class="tag">{{ call.category }}</span>
+          <span class="tag tag--sentiment-{{ call.sentiment|lower }}">{{ call.sentiment }}</span>
+          {% if call.priority %}<span class="tag tag--priority-{{ call.priority|lower }}">{{ call.priority }} priority</span>{% endif %}
+          {% if call.resolution_status %}<span class="tag tag--muted">{{ call.resolution_status }}</span>{% endif %}
+        </div>
+
+        {% if (is_shared and call.shared_info) or call.customer_name or call.agent_name or call.key_issues or call.action_items or call.phone_numbers_mentioned %}
+        <div class="call-card__entities">
+          {% if is_shared and call.shared_info %}
+          {% if call.shared_info.customer_name %}
+          <div class="entity entity--highlight">
+            <span class="entity__label">Customer Name</span>
+            <span class="entity__value"><strong>{{ call.shared_info.customer_name }}</strong></span>
+          </div>
+          {% endif %}
+          <div class="entity entity--highlight">
+            <span class="entity__label">Shared By</span>
+            <span class="entity__value">
+              <strong>{{ call.shared_info.shared_by_username }}</strong>
+            </span>
+          </div>
+          {% if call.customer_name and call.customer_name != call.shared_info.customer_name %}
+          <div class="entity"><span class="entity__label">Detected In Audio</span><span class="entity__value">{{ call.customer_name }}</span></div>
+          {% endif %}
+          {% else %}
+          {% if call.customer_name %}
+          <div class="entity entity--highlight">
+            <span class="entity__label">Customer Name</span>
+            <span class="entity__value"><strong>{{ call.customer_name }}</strong></span>
+          </div>
+          {% endif %}
+          {% endif %}
+          {% if call.agent_name %}<div class="entity"><span class="entity__label">Agent</span><span class="entity__value">{{ call.agent_name }}</span></div>{% endif %}
+          {% if call.phone_numbers_mentioned %}<div class="entity"><span class="entity__label">Phone numbers mentioned</span><span class="entity__value">{{ call.phone_numbers_mentioned | join(', ') }}</span></div>{% endif %}
+          {% if call.key_issues %}
+          <div class="entity entity--full">
+            <span class="entity__label">Key issues</span>
+            <ul class="entity__list">{% for issue in call.key_issues %}<li>{{ issue }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+          {% if call.action_items %}
+          <div class="entity entity--full">
+            <span class="entity__label">Action items{% if call.follow_up_required %} <span class="tag tag--muted">Follow-up needed</span>{% endif %}</span>
+            <ul class="entity__list">{% for item in call.action_items %}<li>{{ item }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <details class="call-card__transcript">
+          <summary>View full transcript ({{ call.language }})</summary>
+
+          <div class="transcript-tabs">
+            <button type="button" class="transcript-tab-btn active" data-target="orig-{{ call._id }}">
+              Original ({{ call.language }})
+            </button>
+            {% if call.language == 'Hindi' %}
+              {% if call.transcript_hindi %}
+              <button type="button" class="transcript-tab-btn" data-target="hi-{{ call._id }}">Hindi</button>
+              {% endif %}
+              {% if call.transcript_gujarati %}
+              <button type="button" class="transcript-tab-btn" data-target="gu-{{ call._id }}">Gujarati</button>
+              {% endif %}
+            {% else %}
+              {% if call.transcript_gujarati %}
+              <button type="button" class="transcript-tab-btn" data-target="gu-{{ call._id }}">Gujarati</button>
+              {% endif %}
+              {% if call.transcript_hindi %}
+              <button type="button" class="transcript-tab-btn" data-target="hi-{{ call._id }}">Hindi</button>
+              {% endif %}
+            {% endif %}
+            {% if call.transcript_english and call.language != 'English' %}
+            <button type="button" class="transcript-tab-btn" data-target="en-{{ call._id }}">English</button>
+            {% endif %}
+          </div>
+
+          <div class="transcript-panel active" id="orig-{{ call._id }}">
+            <p>{{ call.transcript }}</p>
+          </div>
+          {% if call.transcript_hindi %}
+          <div class="transcript-panel" id="hi-{{ call._id }}">
+            <p>{{ call.transcript_hindi }}</p>
+          </div>
+          {% endif %}
+          {% if call.transcript_gujarati %}
+          <div class="transcript-panel" id="gu-{{ call._id }}">
+            <p>{{ call.transcript_gujarati }}</p>
+          </div>
+          {% endif %}
+          {% if call.transcript_english and call.language != 'English' %}
+          <div class="transcript-panel" id="en-{{ call._id }}">
+            <p>{{ call.transcript_english }}</p>
+          </div>
+          {% endif %}
+
+          <div class="call-card__actions">
+            <button type="button" class="btn btn--ghost btn--small call-action-btn"
+                    data-target="summary-panel-{{ call._id }}"
+                    data-label-show="View Summary" data-label-hide="Hide Summary">View Summary</button>
+            <button type="button" class="btn btn--ghost btn--small call-action-btn"
+                    data-target="motive-panel-{{ call._id }}"
+                    data-label-show="Call Motive" data-label-hide="Hide Motive">Call Motive</button>
+          </div>
+
+          <div class="call-insight-panel" id="summary-panel-{{ call._id }}" hidden>
+            <span class="call-insight-panel__label">Call Summary ({{ call.language }})</span>
+            <p>{{ call.summary }}</p>
+            {% if call.summary_english and call.language != 'English' %}
+            <div class="call-insight-panel__sub" style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border);">
+              <span class="call-insight-panel__label" style="font-size: 11px; color: var(--muted);">English Summary</span>
+              <p style="margin: 4px 0 0; color: var(--muted);">{{ call.summary_english }}</p>
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="call-insight-panel call-insight-panel--motive" id="motive-panel-{{ call._id }}" hidden>
+            <span class="call-insight-panel__label">Call Motive ({{ call.language }})</span>
+            <p>{{ call.motive }}</p>
+            {% if call.motive_english and call.language != 'English' %}
+            <div class="call-insight-panel__sub" style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border);">
+              <span class="call-insight-panel__label" style="font-size: 11px; color: var(--muted);">English Motive</span>
+              <p style="margin: 4px 0 0; color: var(--muted);">{{ call.motive_english }}</p>
+            </div>
+            {% endif %}
+          </div>
+        </details>
+      {% elif call.status == 'failed' %}
+        <p class="call-card__error">Processing failed{% if call.failed_stage %} at "{{ call.failed_stage.replace('_', ' ') }}"{% endif %}: {{ call.error }}</p>
+      {% else %}
+        <p class="call-card__processing">
+          {% if call.status == 'preprocessing_audio' %}Cleaning up audio (noise reduction)…
+          {% elif call.status == 'transcribing' %}Transcribing call…
+          {% elif call.status == 'analyzing' %}Classifying &amp; extracting data…
+          {% else %}Processing…{% endif %}
+        </p>
+      {% endif %}
+    </article>
+    {% endmacro %}
+
+    <section class="calls-section">
+      <div class="calls-header-row">
+        <div>
+          <h2 class="section-title">{% if active_view == 'shared' %}Shared with you{% else %}Your processed calls{% endif %}</h2>
+          <p class="section-subtitle">
+            {% if active_view == 'shared' %}
+              Recordings and analysis shared with your account: <strong>{{ session.get('username') }}</strong>.
+            {% else %}
+              Audio recordings uploaded and analyzed by your account.
+            {% endif %}
+          </p>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div class="calls-tabs">
+            <a href="{{ url_for('dashboard', view='my_calls') }}" class="calls-tab {% if active_view != 'shared' %}calls-tab--active{% endif %}">
+              My Calls <span class="tab-badge">{{ calls|length }}</span>
+            </a>
+            <a href="{{ url_for('dashboard', view='shared') }}" class="calls-tab {% if active_view == 'shared' %}calls-tab--active{% endif %}">
+              Shared With Me <span class="tab-badge {% if shared_calls and shared_calls|length > 0 %}tab-badge--highlight{% endif %}">{{ shared_calls|length if shared_calls else 0 }}</span>
+            </a>
+          </div>
+
+          <a href="{{ url_for('export_calls_excel') }}" class="btn btn--ghost btn--small" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font-weight: 500;" title="Export calls to real Excel (.xlsx) file">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
+            Export Excel (.xlsx)
+          </a>
+        </div>
+      </div>
+
+      {% if active_view == 'shared' %}
+        {% if not shared_calls or shared_calls|length == 0 %}
+          <div class="empty-state">
+            <div class="mini-waveform mini-waveform--muted"><span></span><span></span><span></span><span></span><span></span></div>
+            <p>No calls have been shared with you yet. When another user shares a call with your account, it will appear here with full transcripts, translations, and insights.</p>
+          </div>
+        {% else %}
+          <div class="calls-list">
+            {% for call in shared_calls %}
+              {{ render_call_card(call, is_shared=True) }}
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% else %}
+        {% if not calls or calls|length == 0 %}
+          <div class="empty-state">
+            <div class="mini-waveform mini-waveform--muted"><span></span><span></span><span></span><span></span><span></span></div>
+            <p>No calls yet. Upload your first recording above to see the transcript, confidence score, processing time, summary, and category here.</p>
+          </div>
+        {% else %}
+          <div class="calls-list">
+            {% for call in calls %}
+              {{ render_call_card(call, is_shared=False) }}
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endif %}
+    </section>
+
+    <!-- Share Modal Dialog -->
+    <div class="modal-backdrop" id="shareModal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="shareModalTitle">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div class="modal-header__info">
+            <h3 class="modal-title" id="shareModalTitle">Share Call Recording</h3>
+            <p class="modal-subtitle">Share all details, transcripts, translations, and insights with a registered customer.</p>
+          </div>
+          <button type="button" class="modal-close-btn" id="closeShareModalBtn" aria-label="Close dialog">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="share-call-pill">
+            <span class="share-call-pill__icon" style="display:inline-flex; align-items:center;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent2);"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+            </span>
+            <span class="share-call-pill__name" id="shareCallName">recording.mp3</span>
+          </div>
+
+          <!-- Customer Detail Fields -->
+          <div class="share-fields-section">
+            <div class="share-field-row">
+              <label class="share-field-label" for="shareCustomerName">
+                Customer Name <span class="share-required-star">*</span>
+              </label>
+              <input type="text" id="shareCustomerName" class="share-input" autocomplete="name" required>
+            </div>
+
+            <div class="share-field-row">
+              <label class="share-field-label" for="shareCustomerPhone">
+                Customer Phone / Mobile <span class="share-required-star">*</span>
+              </label>
+              <div class="share-phone-group">
+                <select id="shareCountryCode" class="share-country-select" title="Select Country Code" aria-label="Select Country Code">
+                  <option value="+91" selected>🇮🇳 +91 (India)</option>
+                  <option value="+1">🇺🇸 +1 (USA / Canada)</option>
+                  <option value="+44">🇬🇧 +44 (UK)</option>
+                  <option value="+971">🇦🇪 +971 (UAE)</option>
+                  <option value="+61">🇦🇺 +61 (Australia)</option>
+                  <option value="+65">🇸🇬 +65 (Singapore)</option>
+                  <option value="+49">🇩🇪 +49 (Germany)</option>
+                  <option value="+33">🇫🇷 +33 (France)</option>
+                  <option value="+81">🇯🇵 +81 (Japan)</option>
+                  <option value="+86">🇨🇳 +86 (China)</option>
+                  <option value="+966">🇸🇦 +966 (Saudi Arabia)</option>
+                  <option value="+974">🇶🇦 +974 (Qatar)</option>
+                  <option value="+968">🇴🇲 +968 (Oman)</option>
+                  <option value="+965">🇰🇼 +965 (Kuwait)</option>
+                  <option value="+977">🇳🇵 +977 (Nepal)</option>
+                  <option value="+880">🇧🇩 +880 (Bangladesh)</option>
+                  <option value="+94">🇱🇰 +94 (Sri Lanka)</option>
+                  <option value="+27">🇿🇦 +27 (South Africa)</option>
+                  <option value="+7">🇷🇺 +7 (Russia)</option>
+                  <option value="+55">🇧🇷 +55 (Brazil)</option>
+                  <option value="+39">🇮🇹 +39 (Italy)</option>
+                  <option value="+34">🇪🇸 +34 (Spain)</option>
+                  <option value="+41">🇨🇭 +41 (Switzerland)</option>
+                  <option value="+46">🇸🇪 +46 (Sweden)</option>
+                  <option value="+31">🇳🇱 +31 (Netherlands)</option>
+                  <option value="+60">🇲🇾 +60 (Malaysia)</option>
+                  <option value="+64">🇳🇿 +64 (New Zealand)</option>
+                </select>
+                <input type="tel" id="shareCustomerPhone" class="share-input share-phone-input" autocomplete="tel" required>
+              </div>
+            </div>
+          </div>
+
+          <!-- Registered Recipient User Section -->
+          <div class="share-registered-section">
+            <div class="share-section-divider">
+              <span>Select Registered User to Receive Call</span>
+            </div>
+            <p style="font-size: 12px; color: var(--muted); margin: 0 0 10px; text-align: center;">
+              Choose which user will receive this call in their <strong>Shared With Me</strong> section.
+            </p>
+
+            <div class="share-search-bar">
+              <svg class="share-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="text" id="shareUserSearch" class="share-search-input" placeholder="Search user by name or email...">
+            </div>
+
+            <div class="share-users-list" id="shareUsersList">
+              <div class="share-users-loading" style="padding: 16px; text-align: center; color: var(--muted); font-size: 13px;">Loading users...</div>
+            </div>
+          </div>
+
+          <div class="share-selected-preview" id="selectedUserPreview" style="display: none;">
+            <span>Share recipient: <strong id="selectedUserName">—</strong> <small id="selectedUserCustNum" style="color: var(--accent); margin-left: 4px; font-weight: 700;"></small></span>
+          </div>
+
+          <div class="share-alert share-alert--error" id="shareErrorMsg" style="display: none;"></div>
+          <div class="share-alert share-alert--success" id="shareSuccessMsg" style="display: none;"></div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost" id="cancelShareBtn">Cancel</button>
+          <button type="button" class="btn btn--primary" id="confirmShareBtn" disabled>
+            <span id="confirmShareBtnText">Share</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom Website Confirmation Pop-Up Dialog -->
+    <div class="modal-backdrop" id="customConfirmModal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="customConfirmHeading">
+      <div class="modal-dialog" style="max-width: 440px;">
+        <div class="modal-header">
+          <div class="modal-header__info">
+            <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+              <span id="customConfirmIcon" style="font-size: 20px;">🗑️</span>
+              <span id="customConfirmHeading">Confirm Action</span>
+            </h3>
+            <p class="modal-subtitle" id="customConfirmSubtitle">Please confirm to proceed</p>
+          </div>
+          <button type="button" class="modal-close-btn" id="customConfirmCloseBtn" aria-label="Close dialog">&times;</button>
+        </div>
+
+        <div class="modal-body" style="padding: 20px 24px;">
+          <p id="customConfirmMessage" style="margin: 0; font-size: 14px; color: var(--text); line-height: 1.5;">
+            Are you sure you want to perform this action?
+          </p>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost" id="customConfirmCancelBtn">Cancel</button>
+          <button type="button" class="btn btn--danger" id="customConfirmOkBtn">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Show a loading state on submit so it's clear the call is being processed
+  // (transcription + analysis can take a few seconds, especially for longer calls)
+  document.getElementById('uploadForm').addEventListener('submit', function () {
+    var btn = document.getElementById('uploadBtn');
+    btn.textContent = 'Processing…';
+    btn.disabled = true;
+  });
+
+  // "View Summary" / "Call Motive" toggles on each completed call card
+  document.querySelectorAll('.call-action-btn').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var panel = document.getElementById(btn.dataset.target);
+      if (!panel) return;
+
+      var isHidden = panel.hasAttribute('hidden');
+      if (isHidden) {
+        btn.disabled = true;
+        var previousLabel = btn.textContent;
+        btn.textContent = 'Generating…';
+        setTimeout(function () {
+          panel.removeAttribute('hidden');
+          btn.textContent = btn.dataset.labelHide;
+          btn.classList.add('call-action-btn--active');
+          btn.disabled = false;
+        }, 400);
+      } else {
+        panel.setAttribute('hidden', '');
+        btn.textContent = btn.dataset.labelShow;
+        btn.classList.remove('call-action-btn--active');
+      }
+    });
+  });
+
+  // Transcript tab switching (Original / Gujarati / English)
+  document.querySelectorAll('.transcript-tab-btn').forEach(function (tab) {
+    tab.addEventListener('click', function (e) {
+      e.preventDefault();
+      var parent = tab.closest('.call-card__transcript');
+      if (!parent) return;
+      parent.querySelectorAll('.transcript-tab-btn').forEach(function (t) { t.classList.remove('active'); });
+      parent.querySelectorAll('.transcript-panel').forEach(function (p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      var target = document.getElementById(tab.dataset.target);
+      if (target) target.classList.add('active');
+    });
+  });
+
+  // ---------- live call recording (browser microphone) ----------
+  (function () {
+    var startBtn = document.getElementById('startRecordBtn');
+    var stopBtn = document.getElementById('stopRecordBtn');
+    var recordStatus = document.getElementById('recordStatus');
+    var recordTimer = document.getElementById('recordTimer');
+    var previewSection = document.getElementById('recordPreview');
+    var previewAudio = document.getElementById('previewAudio');
+    var processBtn = document.getElementById('processRecordingBtn');
+    var discardBtn = document.getElementById('discardRecordingBtn');
+    var recordForm = document.getElementById('recordForm');
+    var recordFileInput = document.getElementById('recordFileInput');
+
+    if (!startBtn) return; // not on this page
+
+    var mediaRecorder = null;
+    var audioChunks = [];
+    var recordedBlob = null;
+    var mimeType = 'audio/webm';
+    var stream = null;
+    var startTime = null;
+    var timerInterval = null;
+
+    function pad(n) { return String(n).padStart(2, '0'); }
+
+    function updateTimer() {
+      var elapsed = Math.floor((Date.now() - startTime) / 1000);
+      recordTimer.textContent = pad(Math.floor(elapsed / 60)) + ':' + pad(elapsed % 60);
+    }
+
+    function resetRecordingUI() {
+      recordedBlob = null;
+      previewSection.hidden = true;
+      recordStatus.textContent = '';
+      recordTimer.textContent = '00:00';
+      if (previewAudio.src) {
+        URL.revokeObjectURL(previewAudio.src);
+        previewAudio.removeAttribute('src');
+      }
+    }
+
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      startBtn.disabled = true;
+      recordStatus.textContent = 'Your browser does not support in-browser recording. Try Chrome or Edge.';
+    }
+
+    startBtn.addEventListener('click', async function () {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        recordStatus.textContent = 'Microphone access denied or unavailable.';
+        return;
+      }
+
+      audioChunks = [];
+      var options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? { mimeType: 'audio/webm;codecs=opus' } : {};
+      mediaRecorder = new MediaRecorder(stream, options);
+      mimeType = mediaRecorder.mimeType || 'audio/webm';
+
+      mediaRecorder.ondataavailable = function (e) {
+        if (e.data && e.data.size > 0) audioChunks.push(e.data);
+      };
+      mediaRecorder.onstop = function () {
+        recordedBlob = new Blob(audioChunks, { type: mimeType });
+        previewAudio.src = URL.createObjectURL(recordedBlob);
+        previewSection.hidden = false;
+        stream.getTracks().forEach(function (t) { t.stop(); });
+      };
+
+      mediaRecorder.start();
+      startTime = Date.now();
+      timerInterval = setInterval(updateTimer, 500);
+      updateTimer();
+
+      startBtn.hidden = true;
+      stopBtn.hidden = false;
+      previewSection.hidden = true;
+      recordStatus.textContent = 'Recording…';
+    });
+
+    stopBtn.addEventListener('click', function () {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+      clearInterval(timerInterval);
+      startBtn.hidden = false;
+      stopBtn.hidden = true;
+      recordStatus.textContent = 'Recording stopped — review it below.';
+    });
+
+    discardBtn.addEventListener('click', function () {
+      resetRecordingUI();
+    });
+
+    processBtn.addEventListener('click', function () {
+      if (!recordedBlob) return;
+      var ext = mimeType.indexOf('ogg') !== -1 ? 'ogg' : 'webm';
+      var filename = 'live-call-' + Date.now() + '.' + ext;
+      var file = new File([recordedBlob], filename, { type: mimeType });
+      var dt = new DataTransfer();
+      dt.items.add(file);
+      recordFileInput.files = dt.files;
+
+      processBtn.disabled = true;
+      processBtn.textContent = 'Processing…';
+      recordForm.submit();
+    });
+  })();
+
+  // ---------- Share Modal Logic ----------
+  (function () {
+    var modal = document.getElementById('shareModal');
+    if (!modal) return;
+    var closeBtn = document.getElementById('closeShareModalBtn');
+    var cancelBtn = document.getElementById('cancelShareBtn');
+    var confirmBtn = document.getElementById('confirmShareBtn');
+    var confirmBtnText = document.getElementById('confirmShareBtnText');
+    var customerNameInput = document.getElementById('shareCustomerName');
+    var countryCodeSelect = document.getElementById('shareCountryCode');
+    var customerPhoneInput = document.getElementById('shareCustomerPhone');
+    var searchInput = document.getElementById('shareUserSearch');
+    var usersList = document.getElementById('shareUsersList');
+    var callNameEl = document.getElementById('shareCallName');
+    var previewEl = document.getElementById('selectedUserPreview');
+    var previewName = document.getElementById('selectedUserName');
+    var previewCustNum = document.getElementById('selectedUserCustNum');
+    var errorMsg = document.getElementById('shareErrorMsg');
+    var successMsg = document.getElementById('shareSuccessMsg');
+
+    var currentCallId = null;
+    var currentlySharedWith = [];
+    var allUsers = [];
+    var selectedUserId = null;
+
+    function checkCanSubmit() {
+      var nameVal = customerNameInput ? customerNameInput.value.trim() : '';
+      var phoneVal = customerPhoneInput ? customerPhoneInput.value.trim() : '';
+      var cleanPhone = phoneVal.replace(/[\s\-\(\)]/g, '');
+
+      // WITHOUT NUMBER AND NAME AND RECIPIENT WE CANNOT SHARE
+      var hasName = nameVal.length > 0;
+      var hasValidPhone = cleanPhone.length >= 7 && /^\d+$/.test(cleanPhone);
+      var hasRecipient = !!selectedUserId;
+
+      if (hasName && hasValidPhone && hasRecipient) {
+        confirmBtn.disabled = false;
+        confirmBtnText.textContent = 'Share';
+      } else {
+        confirmBtn.disabled = true;
+        confirmBtnText.textContent = 'Share';
+      }
+    }
+
+    if (customerNameInput) {
+      customerNameInput.addEventListener('input', function () {
+        customerNameInput.style.borderColor = '';
+        checkCanSubmit();
+      });
+    }
+    if (customerPhoneInput) {
+      customerPhoneInput.addEventListener('input', function () {
+        customerPhoneInput.style.borderColor = '';
+        checkCanSubmit();
+      });
+    }
+
+    function openModal(callId, callName, sharedWithJson, defaultCustName, defaultCustPhone) {
+      currentCallId = callId;
+      try {
+        currentlySharedWith = typeof sharedWithJson === 'string' ? JSON.parse(sharedWithJson) : (sharedWithJson || []);
+      } catch (e) {
+        currentlySharedWith = [];
+      }
+      callNameEl.textContent = callName || 'Call Recording';
+      selectedUserId = null;
+      if (customerNameInput) {
+        customerNameInput.value = defaultCustName || '';
+        customerNameInput.style.borderColor = '';
+      }
+      if (customerPhoneInput) {
+        customerPhoneInput.value = defaultCustPhone || '';
+        customerPhoneInput.style.borderColor = '';
+      }
+      if (countryCodeSelect) countryCodeSelect.value = '+91';
+
+      confirmBtn.disabled = true;
+      confirmBtnText.textContent = 'Share';
+      previewEl.style.display = 'none';
+      errorMsg.style.display = 'none';
+      successMsg.style.display = 'none';
+      searchInput.value = '';
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+
+      loadUsers();
+      checkCanSubmit();
+    }
+
+    function closeModal() {
+      modal.style.display = 'none';
+      document.body.style.overflow = '';
+      currentCallId = null;
+      selectedUserId = null;
+    }
+
+    function loadUsers() {
+      usersList.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--muted); font-size: 13px;">Loading users...</div>';
+      fetch('/api/users/shareable')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data && data.success && Array.isArray(data.users)) {
+            allUsers = data.users;
+            renderUsers(allUsers);
+          } else {
+            usersList.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--negative); font-size: 13px;">Failed to load users.</div>';
+          }
+        })
+        .catch(function () {
+          usersList.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--negative); font-size: 13px;">Network error loading users.</div>';
+        });
+    }
+
+    function renderUsers(users) {
+      if (!users || users.length === 0) {
+        usersList.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--muted); font-size: 13px;">No registered users found.</div>';
+        return;
+      }
+
+      usersList.innerHTML = '';
+      var sharedUserIds = currentlySharedWith.map(function (s) { return String(s.user_id); });
+
+      users.forEach(function (user) {
+        var isAlreadyShared = sharedUserIds.indexOf(String(user.id)) !== -1;
+        var card = document.createElement('div');
+        card.className = 'share-user-card' + (selectedUserId === user.id ? ' share-user-card--selected' : '');
+        card.dataset.userId = user.id;
+
+        var initial = (user.username || 'U').charAt(0).toUpperCase();
+
+        card.innerHTML =
+          '<div class="share-user-left">' +
+            '<div class="share-user-avatar">' + initial + '</div>' +
+            '<div class="share-user-info">' +
+              '<div class="share-user-name-row">' +
+                '<span class="share-user-name">' + user.username + '</span>' +
+              '</div>' +
+              '<span class="share-user-email">' + user.email + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="share-user-right">' +
+            (isAlreadyShared ? '<span class="share-user-badge">✓ Shared</span>' : '') +
+            '<div class="share-radio-circle"></div>' +
+          '</div>';
+
+        card.addEventListener('click', function () {
+          document.querySelectorAll('.share-user-card').forEach(function (c) {
+            c.classList.remove('share-user-card--selected');
+          });
+          card.classList.add('share-user-card--selected');
+          selectedUserId = user.id;
+
+          var custName = (customerNameInput && customerNameInput.value.trim());
+          previewName.textContent = user.username;
+          previewCustNum.textContent = (custName ? ' · Customer: ' + custName : '');
+          previewEl.style.display = 'block';
+
+          checkCanSubmit();
+        });
+
+        usersList.appendChild(card);
+      });
+    }
+
+    // Search filter
+    searchInput.addEventListener('input', function () {
+      var q = searchInput.value.toLowerCase().trim();
+      if (!q) {
+        renderUsers(allUsers);
+        return;
+      }
+      var filtered = allUsers.filter(function (u) {
+        return (
+          (u.username && u.username.toLowerCase().indexOf(q) !== -1) ||
+          (u.customer_number && u.customer_number.toLowerCase().indexOf(q) !== -1) ||
+          (u.email && u.email.toLowerCase().indexOf(q) !== -1) ||
+          (u.phone && u.phone.toLowerCase().indexOf(q) !== -1)
+        );
+      });
+      renderUsers(filtered);
+    });
+
+    // Share submission
+    confirmBtn.addEventListener('click', function () {
+      var cName = customerNameInput ? customerNameInput.value.trim() : '';
+      var cPhone = customerPhoneInput ? customerPhoneInput.value.trim() : '';
+      var cCode = countryCodeSelect ? countryCodeSelect.value : '+91';
+      var cleanPhone = cPhone.replace(/[\s\-\(\)]/g, '');
+
+      if (!currentCallId) return;
+
+      if (!cName) {
+        errorMsg.textContent = 'Customer Name is compulsory. Please enter customer name.';
+        errorMsg.style.display = 'block';
+        if (customerNameInput) {
+          customerNameInput.focus();
+          customerNameInput.style.borderColor = 'var(--negative)';
+        }
+        return;
+      }
+
+      if (!cPhone || cleanPhone.length < 7 || !/^\d+$/.test(cleanPhone)) {
+        errorMsg.textContent = 'Customer Phone / Mobile number is compulsory (minimum 7 digits).';
+        errorMsg.style.display = 'block';
+        if (customerPhoneInput) {
+          customerPhoneInput.focus();
+          customerPhoneInput.style.borderColor = 'var(--negative)';
+        }
+        return;
+      }
+
+      if (!selectedUserId) {
+        errorMsg.textContent = 'Please select a registered user to receive this call.';
+        errorMsg.style.display = 'block';
+        return;
+      }
+
+      confirmBtn.disabled = true;
+      confirmBtnText.textContent = 'Sharing…';
+      errorMsg.style.display = 'none';
+      successMsg.style.display = 'none';
+
+      fetch('/call/' + encodeURIComponent(currentCallId) + '/share', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+          recipient_id: selectedUserId,
+          customer_name: cName,
+          country_code: cCode,
+          customer_number: cPhone,
+          customer_phone: cPhone
+        })
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res && res.success) {
+          successMsg.textContent = res.message || 'Call shared successfully!';
+          successMsg.style.display = 'block';
+          setTimeout(function () {
+            window.location.reload();
+          }, 700);
+        } else {
+          errorMsg.textContent = (res && res.error) || 'Could not share call.';
+          errorMsg.style.display = 'block';
+          confirmBtn.disabled = false;
+          checkCanSubmit();
+        }
+      })
+      .catch(function (err) {
+        errorMsg.textContent = 'Network error while sharing call.';
+        errorMsg.style.display = 'block';
+        confirmBtn.disabled = false;
+        checkCanSubmit();
+      });
+    });
+
+    // Bind share buttons
+    document.querySelectorAll('.js-share-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        openModal(btn.dataset.callId, btn.dataset.callName, btn.dataset.sharedWith, btn.dataset.customerName, btn.dataset.customerPhone);
+      });
+    });
+
+    closeBtn.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.style.display === 'flex') {
+        closeModal();
+      }
+    });
+  })();
+
+  // Custom Website Confirmation Dialog Controller
+  (function () {
+    var confirmModal = document.getElementById('customConfirmModal');
+    if (!confirmModal) return;
+
+    var confirmHeading = document.getElementById('customConfirmHeading');
+    var confirmSubtitle = document.getElementById('customConfirmSubtitle');
+    var confirmMessage = document.getElementById('customConfirmMessage');
+    var confirmIcon = document.getElementById('customConfirmIcon');
+    var confirmOkBtn = document.getElementById('customConfirmOkBtn');
+    var confirmCancelBtn = document.getElementById('customConfirmCancelBtn');
+    var confirmCloseBtn = document.getElementById('customConfirmCloseBtn');
+
+    var pendingForm = null;
+
+    function closeConfirmModal() {
+      confirmModal.style.display = 'none';
+      document.body.style.overflow = '';
+      pendingForm = null;
+    }
+
+    function openConfirmDialog(form, opts) {
+      pendingForm = form;
+      confirmHeading.textContent = opts.title || 'Confirm Action';
+      confirmSubtitle.textContent = opts.subtitle || 'Please confirm to proceed';
+      confirmMessage.textContent = opts.message || 'Are you sure you want to proceed?';
+      confirmIcon.textContent = opts.icon || '⚠️';
+      confirmOkBtn.textContent = opts.btnText || 'Confirm';
+
+      if (opts.danger) {
+        confirmOkBtn.className = 'btn btn--danger';
+      } else {
+        confirmOkBtn.className = 'btn btn--primary';
+      }
+
+      confirmModal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+
+    confirmOkBtn.addEventListener('click', function () {
+      if (pendingForm) {
+        var formToSubmit = pendingForm;
+        closeConfirmModal();
+        formToSubmit.submit();
+      } else {
+        closeConfirmModal();
+      }
+    });
+
+    confirmCancelBtn.addEventListener('click', closeConfirmModal);
+    confirmCloseBtn.addEventListener('click', closeConfirmModal);
+
+    confirmModal.addEventListener('click', function (e) {
+      if (e.target === confirmModal) closeConfirmModal();
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && confirmModal.style.display === 'flex') {
+        closeConfirmModal();
+      }
+    });
+
+    // Intercept forms requesting custom website confirmation
+    document.querySelectorAll('.js-confirm-action').forEach(function (form) {
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var title = form.dataset.confirmTitle || 'Confirm Action';
+        var subtitle = form.dataset.confirmSubtitle || 'Please confirm to proceed';
+        var message = form.dataset.confirmMessage || 'Are you sure?';
+        var icon = form.dataset.confirmIcon || (form.dataset.confirmDanger === 'true' ? '🗑️' : '⚠️');
+        var btnText = form.dataset.confirmBtn || 'Confirm';
+        var danger = form.dataset.confirmDanger === 'true';
+
+        openConfirmDialog(form, {
+          title: title,
+          subtitle: subtitle,
+          message: message,
+          icon: icon,
+          btnText: btnText,
+          danger: danger
+        });
+      });
+    });
+  })();
+</script>
+{% endblock %}

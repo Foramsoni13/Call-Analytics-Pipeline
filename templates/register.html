@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block title %}Create account — CallSense{% endblock %}
+{% block content %}
+<div class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-card__brand">
+      <div class="mini-waveform"><span></span><span></span><span></span><span></span><span></span></div>
+      <span class="auth-card__brand-text">Call<span class="accent">Sense</span></span>
+    </div>
+
+    <h1 class="auth-card__title">Create your account</h1>
+    <p class="auth-card__subtitle">Set up access to the call analytics dashboard.</p>
+
+
+    <form method="POST" action="{{ url_for('register') }}" class="auth-form" id="registerForm" novalidate>
+      <div class="field">
+        <label for="regUsername" class="field__label">Username</label>
+        <input type="text" id="regUsername" name="username" value="{{ username or '' }}" required autofocus autocomplete="username">
+        <span class="field__hint">3–30 characters (letters, numbers, underscore, dot)</span>
+        <span class="field__error" id="usernameError"></span>
+      </div>
+
+      <div class="field">
+        <label for="regEmail" class="field__label">Email address</label>
+        <input type="email" id="regEmail" name="email" value="{{ email or '' }}" required autocomplete="email">
+        <span class="field__error" id="emailError"></span>
+      </div>
+
+      <div class="field">
+        <label for="regPassword" class="field__label">Password</label>
+        <div class="field__input-wrap">
+          <input type="password" id="regPassword" name="password" required autocomplete="new-password">
+          <button type="button" class="field__toggle-pw" id="togglePwBtn" title="Toggle password visibility" aria-label="Show password">
+            <svg class="eye-icon eye-icon--open" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="eye-icon eye-icon--closed" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
+        <div class="pw-strength-bar" id="pwStrengthBar" style="display: none;">
+          <span class="pw-strength-segment" id="pwSeg1"></span>
+          <span class="pw-strength-segment" id="pwSeg2"></span>
+          <span class="pw-strength-segment" id="pwSeg3"></span>
+        </div>
+        <span class="pw-strength-text" id="pwStrengthText" style="display: none;"></span>
+        <span class="field__error" id="passwordError"></span>
+      </div>
+
+      <div class="field">
+        <label for="regConfirmPassword" class="field__label">Confirm Password</label>
+        <div class="field__input-wrap">
+          <input type="password" id="regConfirmPassword" name="confirm_password" required autocomplete="new-password">
+          <button type="button" class="field__toggle-pw" id="toggleConfirmPwBtn" title="Toggle password visibility" aria-label="Show password">
+            <svg class="eye-icon eye-icon--open" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="eye-icon eye-icon--closed" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
+        <span class="field__error" id="confirmError"></span>
+      </div>
+
+      <button type="submit" class="btn btn--primary btn--block" id="registerSubmitBtn">Create account</button>
+    </form>
+
+    <p class="auth-card__footer">
+      Already have an account? <a href="{{ url_for('login') }}">Log in</a>
+    </p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var form = document.getElementById('registerForm');
+  var usernameInput = document.getElementById('regUsername');
+  var emailInput = document.getElementById('regEmail');
+  var passwordInput = document.getElementById('regPassword');
+  var confirmInput = document.getElementById('regConfirmPassword');
+
+  var usernameError = document.getElementById('usernameError');
+  var emailError = document.getElementById('emailError');
+  var passwordError = document.getElementById('passwordError');
+  var confirmError = document.getElementById('confirmError');
+
+  var togglePwBtn = document.getElementById('togglePwBtn');
+  var toggleConfirmPwBtn = document.getElementById('toggleConfirmPwBtn');
+
+  var pwStrengthBar = document.getElementById('pwStrengthBar');
+  var pwStrengthText = document.getElementById('pwStrengthText');
+  var pwSeg1 = document.getElementById('pwSeg1');
+  var pwSeg2 = document.getElementById('pwSeg2');
+  var pwSeg3 = document.getElementById('pwSeg3');
+
+  // Toggle password visibility with professional SVG icons
+  function setupToggle(btn, input) {
+    var openIcon = btn.querySelector('.eye-icon--open');
+    var closedIcon = btn.querySelector('.eye-icon--closed');
+    btn.addEventListener('click', function() {
+      if (input.type === 'password') {
+        input.type = 'text';
+        if (openIcon) openIcon.style.display = 'none';
+        if (closedIcon) closedIcon.style.display = 'block';
+        btn.setAttribute('aria-label', 'Hide password');
+      } else {
+        input.type = 'password';
+        if (openIcon) openIcon.style.display = 'block';
+        if (closedIcon) closedIcon.style.display = 'none';
+        btn.setAttribute('aria-label', 'Show password');
+      }
+    });
+  }
+  setupToggle(togglePwBtn, passwordInput);
+  setupToggle(toggleConfirmPwBtn, confirmInput);
+
+  function setError(input, errorEl, msg) {
+    if (msg) {
+      input.classList.add('is-invalid');
+      input.classList.remove('is-valid');
+      errorEl.textContent = msg;
+      errorEl.classList.add('is-visible');
+    } else {
+      input.classList.remove('is-invalid');
+      input.classList.add('is-valid');
+      errorEl.textContent = '';
+      errorEl.classList.remove('is-visible');
+    }
+  }
+
+  function clearState(input, errorEl) {
+    input.classList.remove('is-invalid');
+    input.classList.remove('is-valid');
+    errorEl.textContent = '';
+    errorEl.classList.remove('is-visible');
+  }
+
+  // Username validation
+  var usernameRegex = /^[a-zA-Z0-9_.]{3,30}$/;
+  function validateUsername(showClean) {
+    var val = usernameInput.value.trim();
+    if (!val) {
+      if (showClean) setError(usernameInput, usernameError, 'Username is required.');
+      return false;
+    }
+    if (val.length < 3) {
+      setError(usernameInput, usernameError, 'Username must be at least 3 characters.');
+      return false;
+    }
+    if (val.length > 30) {
+      setError(usernameInput, usernameError, 'Username cannot exceed 30 characters.');
+      return false;
+    }
+    if (!usernameRegex.test(val)) {
+      setError(usernameInput, usernameError, 'Only letters, numbers, underscores, and dots are allowed.');
+      return false;
+    }
+    setError(usernameInput, usernameError, '');
+    return true;
+  }
+
+  // Email validation
+  var emailRegex = /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/;
+  function validateEmail(showClean) {
+    var val = emailInput.value.trim();
+    if (!val) {
+      if (showClean) setError(emailInput, emailError, 'Email address is required.');
+      return false;
+    }
+    if (!emailRegex.test(val)) {
+      setError(emailInput, emailError, 'Please enter a valid email address (e.g. name@example.com).');
+      return false;
+    }
+    setError(emailInput, emailError, '');
+    return true;
+  }
+
+  // Password validation & strength
+  function checkPasswordStrength(val) {
+    if (!val) return 0;
+    var score = 0;
+    if (val.length >= 6) score++;
+    if (val.length >= 9) score++;
+    if (/[0-9]/.test(val) && /[a-zA-Z]/.test(val)) score++;
+    if (/[^a-zA-Z0-9]/.test(val)) score++;
+    return Math.min(score, 3);
+  }
+
+  function validatePassword(showClean) {
+    var val = passwordInput.value;
+    if (!val) {
+      pwStrengthBar.style.display = 'none';
+      pwStrengthText.style.display = 'none';
+      if (showClean) setError(passwordInput, passwordError, 'Password is required.');
+      return false;
+    }
+
+    // Show strength
+    pwStrengthBar.style.display = 'flex';
+    pwStrengthText.style.display = 'block';
+    var strength = checkPasswordStrength(val);
+
+    pwSeg1.style.background = 'var(--border)';
+    pwSeg2.style.background = 'var(--border)';
+    pwSeg3.style.background = 'var(--border)';
+
+    if (val.length < 6) {
+      pwSeg1.style.background = 'var(--negative)';
+      pwStrengthText.textContent = 'Too short (min 6 characters)';
+      pwStrengthText.style.color = 'var(--negative)';
+      setError(passwordInput, passwordError, 'Password must be at least 6 characters long.');
+      return false;
+    } else if (strength === 1) {
+      pwSeg1.style.background = 'var(--warning)';
+      pwStrengthText.textContent = 'Strength: Fair';
+      pwStrengthText.style.color = 'var(--warning)';
+    } else if (strength === 2) {
+      pwSeg1.style.background = 'var(--accent2)';
+      pwSeg2.style.background = 'var(--accent2)';
+      pwStrengthText.textContent = 'Strength: Good';
+      pwStrengthText.style.color = 'var(--accent2)';
+    } else {
+      pwSeg1.style.background = 'var(--positive)';
+      pwSeg2.style.background = 'var(--positive)';
+      pwSeg3.style.background = 'var(--positive)';
+      pwStrengthText.textContent = 'Strength: Strong';
+      pwStrengthText.style.color = 'var(--positive)';
+    }
+
+    setError(passwordInput, passwordError, '');
+    return true;
+  }
+
+  // Confirm password validation
+  function validateConfirm(showClean) {
+    var pw = passwordInput.value;
+    var conf = confirmInput.value;
+    if (!conf) {
+      if (showClean) setError(confirmInput, confirmError, 'Please confirm your password.');
+      return false;
+    }
+    if (pw !== conf) {
+      setError(confirmInput, confirmError, 'Passwords do not match.');
+      return false;
+    }
+    setError(confirmInput, confirmError, '');
+    return true;
+  }
+
+  // Real-time input events
+  usernameInput.addEventListener('input', function() { validateUsername(false); });
+  usernameInput.addEventListener('blur', function() { validateUsername(true); });
+
+  emailInput.addEventListener('input', function() { validateEmail(false); });
+  emailInput.addEventListener('blur', function() { validateEmail(true); });
+
+  passwordInput.addEventListener('input', function() {
+    validatePassword(false);
+    if (confirmInput.value) validateConfirm(false);
+  });
+  passwordInput.addEventListener('blur', function() { validatePassword(true); });
+
+  confirmInput.addEventListener('input', function() { validateConfirm(false); });
+  confirmInput.addEventListener('blur', function() { validateConfirm(true); });
+
+  // On submit
+  form.addEventListener('submit', function(e) {
+    var uValid = validateUsername(true);
+    var eValid = validateEmail(true);
+    var pValid = validatePassword(true);
+    var cValid = validateConfirm(true);
+
+    if (!uValid || !eValid || !pValid || !cValid) {
+      e.preventDefault();
+      // Focus first invalid input
+      if (!uValid) usernameInput.focus();
+      else if (!eValid) emailInput.focus();
+      else if (!pValid) passwordInput.focus();
+      else confirmInput.focus();
+    }
+  });
+})();
+</script>
+{% endblock %}
